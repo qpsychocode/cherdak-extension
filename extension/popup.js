@@ -126,8 +126,8 @@ const PROBLEMS = {
 
 function setNote(problem) {
   const note = $("note");
-  // Пока копировать нечего, шаги «вставь в заказ» ни к чему — и попап остаётся в 600 px.
-  $("next").hidden = Boolean(problem);
+  // Пока копировать нечего, шаги «вставь в заказ» ни к чему: их показывает только удачное копирование.
+  if (problem) { $("next").hidden = true; $("fine").hidden = false; }
   if (!problem) { note.hidden = true; return; }
   const [title, text] = (PROBLEMS[problem] ?? PROBLEMS.error)(service);
   const parts = [node("b", {}, title), text];
@@ -162,7 +162,9 @@ function showService() {
   $("lead").textContent = service.lead;
   $("slipSite").textContent = service.site;
   renderActions();
-  $("next").hidden = false;
+  // До копирования — обещание «читаю только по нажатию»; после — что делать со скопированным.
+  $("next").hidden = true;
+  $("fine").hidden = false;
 }
 
 function reprint() {
@@ -201,6 +203,8 @@ async function run(actionId, button) {
   $("copied").replaceChildren(node("span", {}, res.preview.label), node("b", {}, res.preview.value));
   $("copied").hidden = false;
   $("stamp").hidden = false;
+  $("next").hidden = false;
+  $("fine").hidden = true;
 }
 
 document.addEventListener("click", (event) => {
