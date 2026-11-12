@@ -1,13 +1,15 @@
-// Чистая упаковка данных входа: без chrome.* и DOM, её же гоняет контрактный тест
-// (tests/browser-extension.test.mjs): вывод расширения должен приниматься парсерами
-// бэкенда как есть.
+// Чистая упаковка данных входа: без chrome.* и DOM, её же гоняют тесты — и тест магазина,
+// который подаёт каждый результат прямо в парсеры его бэкенда.
 //
-// На вход — карта «имя куки → { name, value }» (в расширении её наполняет
-// chrome.cookies, в тесте — фикстуры). На выход — { ok, payload, fields }:
-// payload — ровно тот текст, что вставляет покупатель; fields — строки чека
-// (подпись, замаскированное значение и, если поле можно передать отдельно, copy).
+// У каждого сервиса — свои кнопки (actions). Кнопка получает то, что прочитал попап:
+//   cookies — карта «имя куки → куки» сайта сервиса (из дублей — самое длинное значение),
+//   list    — все куки сайта как есть (для «Скопировать все куки»),
+//   session — ответ страницы сессии ChatGPT (/api/auth/session), только для ID аккаунта.
+// и возвращает { ok, payload, preview } или { ok: false, reason }: payload — ровно тот текст,
+// что ляжет в буфер обмена, preview — что показать вместо него (значение замаскировано).
 
 export const BOT_URL = "https://t.me/cherdax_bot";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function maskValue(value) {
   const v = String(value || "");
@@ -21,9 +23,12 @@ function get(map, name) {
   return map[name];
 }
 
-// ChatGPT: массив куки для chatgpt-pay/payment.py parse_session_file и
+const done = (payload, label, shown = maskValue(payload)) => ({ ok: true, payload, preview: { label, value: shown } });
+const missing = (reason = "notLoggedIn") => ({ ok: false, reason });
+
+// ChatGPT, сессия: массив куки для chatgpt-pay/payment.py parse_session_file и
 // apps/api/src/chatgpt.mjs looksLikeSession.
-export function packChatGpt(cookies) {
+export function packChatGpt({ cookies } = {}) {
   const out = [];
   const chunk0 = get(cookies, "__Secure-next-auth.session-token.0");
   const chunk1 = get(cookies, "__Secure-next-auth.session-token.1");
@@ -36,43 +41,54 @@ export function packChatGpt(cookies) {
   }
   const did = get(cookies, "oai-did");
   if (did) out.push({ name: "oai-did", value: did.value });
-
-  if (!out.length || !out[0].name.startsWith("__Secure-next-auth.session-token")) {
-    return { ok: false, reason: "notLoggedIn" };
-  }
-  const fields = [{ label: "Сессия", value: maskValue(out[0].value) }];
-  if (did) fields.push({ label: "ID устройства", value: maskValue(did.value) });
-  return { ok: true, payload: JSON.stringify(out, null, 2), fields };
+  if (!out.length || !out[0].name.startsWith("__Secure-next-auth.session-token")) return missing();
+  return done(JSON.stringify(out, null, 2), "Сессия", maskValue(out[0].value));
 }
 
-// Claude: массив куки для apps/api/src/claude.mjs parseClaudeCookies (sessionKey и
-// Organization ID из lastActiveOrg). Ключ и ID можно скопировать и по отдельности:
-// заказ «по Organization ID» принимает только сам ID (parseClaudeOrganizationId
-// отвергает текст с «{»), заказ «по sessionKey» — голый ключ.
-export function packClaude(cookies) {
+// ChatGPT, ID аккаунта: "account":{"id":…} со страницы сессии, 36 символов. Не user-… —
+// тот не подойдёт (packages/shared/src/activation-methods.mjs parseChatGptAccountId).
+export function packChatGptAccountId({ session } = {}) {
+  if (session === null || session === undefined) return missing();
+  const id = session?.account?.id;
+  if (typeof id !== "string" || !UUID.test(id)) return missing("noAccountId");
+  return done(id.toLowerCase(), "ID аккаунта");
+}
+
+// Claude, sessionKey: голый ключ sk-ant-sid… (apps/api/src/claude.mjs parseClaudeCookies).
+export function packClaudeKey({ cookies } = {}) {
   const key = get(cookies, "sessionKey");
-  const org = get(cookies, "lastActiveOrg") || get(cookies, "activeOrg");
-  if (!key) return { ok: false, reason: "notLoggedIn" };
-  const out = [{ name: "sessionKey", value: key.value }];
-  if (org) out.push({ name: org.name, value: org.value });
-  const fields = [{ label: "sessionKey", value: maskValue(key.value), copy: key.value }];
-  if (org) fields.push({ label: "Organization ID", value: maskValue(org.value), copy: org.value });
-  return { ok: true, payload: JSON.stringify(out, null, 2), fields };
+  return key?.value ? done(key.value, "sessionKey") : missing();
 }
 
-// Grok/X/Cursor: массив куки с токеном sso домена grok.com для
-// apps/api/src/grok.mjs parseGrokCookies.
-export function packGrok(cookies) {
+// Claude, Organization ID: выбранная сейчас организация (куки lastActiveOrg) — заказ «по
+// Organization ID» принимает только сам ID (parseClaudeOrganizationId).
+export function packClaudeOrg({ cookies } = {}) {
+  const org = get(cookies, "lastActiveOrg") || get(cookies, "activeOrg");
+  if (!get(cookies, "sessionKey")) return missing();
+  return org?.value && UUID.test(org.value) ? done(org.value.toLowerCase(), "Organization ID") : missing("noOrg");
+}
+
+// Grok · X · Cursor, токен входа: голый токен sso с grok.com (apps/api/src/grok.mjs parseGrokCookies).
+export function packGrok({ cookies } = {}) {
   const sso = get(cookies, "sso");
-  if (!sso) return { ok: false, reason: "notLoggedIn" };
-  return {
-    ok: true,
-    payload: JSON.stringify([{ name: "sso", value: sso.value, domain: ".grok.com" }], null, 2),
-    fields: [{ label: "Токен входа grok.com", value: maskValue(sso.value) }]
+  return sso?.value ? done(sso.value, "Токен входа") : missing();
+}
+
+// «Все куки»: как экспорт Cookie-Editor (Export as JSON) — массив со всеми полями куки.
+// Только если вход есть: без ключевой куки такой экспорт заказу бесполезен.
+const COOKIE_FIELDS = ["domain", "expirationDate", "hostOnly", "httpOnly", "name", "path", "sameSite", "secure", "session", "storeId", "value"];
+export function packAllCookies(keyCookie) {
+  return ({ list } = {}) => {
+    const cookies = (Array.isArray(list) ? list : []).filter((c) => c && c.name);
+    if (!cookies.some((c) => c.name === keyCookie && c.value)) return missing();
+    const out = cookies
+      .map((c) => Object.fromEntries(COOKIE_FIELDS.filter((field) => c[field] !== undefined).map((field) => [field, c[field]])))
+      .sort((a, b) => a.name.localeCompare(b.name) || String(a.domain).localeCompare(String(b.domain)));
+    return done(JSON.stringify(out, null, 2), "Все куки", `${out.length} шт.`);
   };
 }
 
-// Тексты на «ты», как на сайте и в боте.
+// Тексты на «ты», как на сайте и в боте. needs — что кнопке прочитать заранее.
 export const SERVICES = {
   chatgpt: {
     id: "chatgpt",
@@ -80,10 +96,12 @@ export const SERVICES = {
     site: "chatgpt.com",
     url: "https://chatgpt.com/",
     cookieUrls: ["https://chatgpt.com", "https://chat.openai.com"],
-    pack: packChatGpt,
-    lead: "Скопирую сессию твоего аккаунта ChatGPT — по ней оформим подписку на него.",
-    preview: ["Сессия", "ID устройства"],
-    loginHint: "Войди на chatgpt.com в аккаунт, на который оформляешь подписку, и нажми ещё раз."
+    lead: "Скопирую сессию или ID аккаунта — что просит заказ.",
+    loginHint: "Войди на chatgpt.com в аккаунт, на который оформляешь подписку, и нажми ещё раз.",
+    actions: [
+      { id: "session", label: "Скопировать сессию", needs: "cookies", pack: packChatGpt },
+      { id: "account", label: "Скопировать ID аккаунта", needs: "session", pack: packChatGptAccountId }
+    ]
   },
   claude: {
     id: "claude",
@@ -91,10 +109,13 @@ export const SERVICES = {
     site: "claude.ai",
     url: "https://claude.ai/",
     cookieUrls: ["https://claude.ai"],
-    pack: packClaude,
-    lead: "Скопирую ключ входа и Organization ID твоего аккаунта Claude.",
-    preview: ["sessionKey", "Organization ID"],
-    loginHint: "Войди на claude.ai в аккаунт, на который оформляешь подписку, и нажми ещё раз."
+    lead: "Скопирую то, что просит заказ.",
+    loginHint: "Войди на claude.ai в аккаунт, на который оформляешь подписку, и нажми ещё раз.",
+    actions: [
+      { id: "key", label: "Скопировать sessionKey", needs: "cookies", pack: packClaudeKey },
+      { id: "org", label: "Скопировать Organization ID", needs: "cookies", pack: packClaudeOrg },
+      { id: "all", label: "Скопировать все куки", needs: "list", pack: packAllCookies("sessionKey") }
+    ]
   },
   grok: {
     id: "grok",
@@ -102,10 +123,12 @@ export const SERVICES = {
     site: "grok.com",
     url: "https://grok.com/",
     cookieUrls: ["https://grok.com"],
-    pack: packGrok,
-    lead: "Единая подписка X, Grok и Cursor включается на grok.com. Скопирую оттуда токен входа.",
-    preview: ["Токен входа grok.com"],
-    loginHint: "Войди на grok.com тем же аккаунтом, что в X и Cursor, и нажми ещё раз."
+    lead: "Подписка X, Grok и Cursor включается на grok.com — данные беру оттуда.",
+    loginHint: "Войди на grok.com тем же аккаунтом, что в X и Cursor, и нажми ещё раз.",
+    actions: [
+      { id: "sso", label: "Скопировать токен входа", needs: "cookies", pack: packGrok },
+      { id: "all", label: "Скопировать все куки", needs: "list", pack: packAllCookies("sso") }
+    ]
   }
 };
 

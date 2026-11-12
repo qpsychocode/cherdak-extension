@@ -6,12 +6,13 @@ Cursor в магазине [Чердак](https://shop.cherdak.org) **на тв�
 Чтобы оплатить подписку на твой аккаунт, магазину нужны данные входа в него: сессия
 ChatGPT, ключ `sessionKey` и Organization ID у Claude, токен входа grok.com. Раньше их
 приходилось доставать вручную через инструменты разработчика. Расширение делает это
-одной кнопкой: открой сайт сервиса, нажми на значок Чердака → «Скопировать данные
-входа» и вставь результат в заказ.
+одной кнопкой: открой сайт сервиса, нажми на значок Чердака, выбери то, что просит заказ
+(например, «Скопировать sessionKey»), и вставь результат в заказ.
 
-**Расширение ничего никуда не отправляет.** Оно читает данные только на твоём
-компьютере, только по нажатию и только с сайта сервиса, и кладёт их в буфер обмена.
-В коде нет ни одного сетевого запроса — проверь сам, он небольшой: [`extension/`](extension).
+**Расширение ничего никуда не отправляет.** Оно читает данные только в твоём браузере,
+только по нажатию и только с сайта сервиса, и кладёт их в буфер обмена. Единственный
+запрос в коде — страница сессии ChatGPT в его же вкладке, ради ID аккаунта. Проверь сам,
+код небольшой: [`extension/`](extension).
 
 ## Установка
 
@@ -25,13 +26,17 @@ ChatGPT, ключ `sessionKey` и Organization ID у Claude, токен вход
 
 ## Что копируется
 
-| Сайт | Что | Формат |
-|------|-----|--------|
-| chatgpt.com | куки сессии `__Secure-next-auth.session-token`, `oai-did` | `[{ "name", "value" }]` |
-| claude.ai | `sessionKey` и Organization ID (`lastActiveOrg`); каждое можно скопировать отдельно | `[{ "name", "value" }]` |
-| grok.com, x.com, cursor.com | токен `sso` с grok.com: единая подписка X, Grok и Cursor включается там | `[{ "name", "value", "domain" }]` |
+| Сайт | Кнопка | Что ляжет в буфер |
+|------|--------|-------------------|
+| chatgpt.com | Скопировать сессию | куки `__Secure-next-auth.session-token`, `oai-did`: `[{ "name", "value" }]` |
+| | Скопировать ID аккаунта | `account.id` со страницы сессии — 36 символов |
+| claude.ai | Скопировать sessionKey | ключ `sk-ant-sid…` |
+| | Скопировать Organization ID | выбранная организация (`lastActiveOrg`) |
+| | Скопировать все куки | все куки claude.ai, как экспорт Cookie-Editor |
+| grok.com, x.com, cursor.com | Скопировать токен входа | токен `sso` с grok.com: единая подписка X, Grok и Cursor включается там |
+| | Скопировать все куки | все куки grok.com, как экспорт Cookie-Editor |
 
-Формат — тот же, что у экспорта Cookie-Editor, его принимает бот и сайт Чердака.
+Всё это принимают сайт и бот Чердака как есть.
 
 ## Разрешения
 
@@ -39,6 +44,8 @@ ChatGPT, ключ `sessionKey` и Organization ID у Claude, токен вход
   скрипты их не видят, прочитать их может только расширение.
 - `activeTab` — узнать адрес открытой вкладки, когда ты нажал на значок, чтобы показать
   нужный сервис.
+- `scripting` — для «Скопировать ID аккаунта»: прочитать страницу сессии ChatGPT в его же
+  вкладке.
 - Доступ только к `chatgpt.com`, `chat.openai.com`, `claude.ai`, `grok.com`. Ни к каким
   другим сайтам, без фоновой работы и аналитики.
 
@@ -92,5 +99,6 @@ buyer's own account. To do that it needs the account's login data (session cooki
 which buyers used to dig out of DevTools by hand. This extension copies exactly those
 values from the open service tab to the clipboard in one click, in the format the shop
 accepts. It runs only on click, reads only `chatgpt.com`, `chat.openai.com`, `claude.ai`
-and `grok.com` cookies, makes no network requests and stores nothing.
+and `grok.com` data, stores nothing and sends nothing anywhere; its only request is the
+ChatGPT tab reading its own `/api/auth/session` for the account ID.
 Licensed under MIT; bundled fonts under SIL OFL 1.1.

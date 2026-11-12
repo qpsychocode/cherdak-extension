@@ -67,6 +67,9 @@ body[data-service="grok"] {
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Попап Chrome не выше 600 px: всё помещается без прокрутки, а полосы не видно и на всякий случай. */
+html { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
 body {
   width: 360px;
   background: var(--cobalt);
@@ -85,7 +88,7 @@ a { color: inherit; text-decoration: none; }
 
 .field {
   position: relative; isolation: isolate;
-  padding: 16px 18px 18px;
+  padding: 14px 16px 14px;
   transition: background-color 300ms var(--ease);
 }
 .field::before { /* лампа над прилавком, как на сайте */
@@ -104,11 +107,11 @@ a { color: inherit; text-decoration: none; }
   color: var(--on-cobalt-2); border: 1px solid var(--on-cobalt-line); border-radius: 999px; padding: 5px 9px;
 }
 
-h1 { margin-top: 18px; font: 750 28px/1.05 var(--font-display); letter-spacing: -0.035em; }
-.lead { margin-top: 8px; color: var(--on-cobalt-2); font-size: 14px; line-height: 1.45; text-wrap: pretty; }
+h1 { margin-top: 14px; font: 750 26px/1.05 var(--font-display); letter-spacing: -0.035em; }
+.lead { margin-top: 6px; color: var(--on-cobalt-2); font-size: 13.5px; line-height: 1.4; text-wrap: pretty; }
 
 /* ── чек ─────────────────────────────────────────────── */
-.slip { position: relative; margin-top: 16px; clip-path: inset(0 -40px -80px -40px); } /* над прорезью чек не виден */
+.slip { position: relative; margin-top: 12px; clip-path: inset(0 -40px -80px -40px); } /* над прорезью чек не виден */
 .slip-slot {
   position: relative; z-index: 2; height: 22px; margin: 0 -8px; border-radius: 12px 12px 8px 8px;
   background: linear-gradient(180deg, var(--slot-hi), var(--slot-lo));
@@ -116,7 +119,7 @@ h1 { margin-top: 18px; font: 750 28px/1.05 var(--font-display); letter-spacing: 
 }
 .slip-slot::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 3px; background: oklch(0.08 0.02 266); }
 .slip-paper {
-  position: relative; margin: -8px 4px 0; padding: 22px 18px 18px; color: var(--ink);
+  position: relative; margin: -8px 4px 0; padding: 18px 16px 16px; color: var(--ink);
   background: linear-gradient(180deg, var(--slip-top), var(--slip) 30px);
   filter: drop-shadow(0 16px 22px var(--shadow));
   animation: print 700ms var(--ease) both;
@@ -136,62 +139,58 @@ h1 { margin-top: 18px; font: 750 28px/1.05 var(--font-display); letter-spacing: 
 }
 .slip-brand { font: 750 13px/1 var(--font-display); letter-spacing: 0.1em; color: var(--ink); }
 
-.slip-lines { padding: 8px 0 12px; }
-.slip-lines > div { display: flex; align-items: center; gap: 10px; min-height: 34px; border-bottom: 1px dashed var(--line); }
-.slip-lines > div:last-child { border-bottom: 0; }
-.slip-lines dt { flex: 1; color: var(--ink-2); font-size: 13.5px; }
-.slip-lines dd { font: 500 12.5px/1.2 var(--font-mono); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
-.slip-lines dd.is-empty { color: var(--line-2); letter-spacing: 0.15em; }
-.line-copy {
-  flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: -6px;
-  border: 0; border-radius: 8px; background: none; color: var(--ink-3); cursor: pointer;
-  transition: background-color 150ms var(--ease), color 150ms var(--ease);
-}
-.line-copy:hover { background: var(--line); color: var(--ink); }
-.line-copy.is-done { color: var(--ink); background: var(--signal); }
-body[data-service="none"] .slip-lines dt { color: var(--ink); font-weight: 600; }
-.line-open { border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 11px; background: none; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer; }
-.line-open:hover { border-color: var(--ink); }
-
-.slip-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bad) 9%, var(--slip)); box-shadow: inset 3px 0 0 var(--bad); color: var(--ink); font-size: 13px; line-height: 1.45; }
+.slip-note { margin: 12px 0 0; padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, var(--bad) 9%, var(--slip)); box-shadow: inset 3px 0 0 var(--bad); color: var(--ink); font-size: 13px; line-height: 1.4; }
 .slip-note b { display: block; margin-bottom: 2px; }
 
+/* Кнопки чека: у каждого сервиса свои — то, что просит заказ. Первая главная. */
+.actions { display: grid; gap: 7px; margin-top: 12px; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 46px; padding: 0 18px; border: 1px solid transparent; border-radius: 12px;
-  font: 650 15px/1 var(--font-body); cursor: pointer; white-space: nowrap;
+  min-height: 40px; padding: 0 16px; border: 1px solid transparent; border-radius: 11px;
+  font: 650 14.5px/1 var(--font-body); cursor: pointer; white-space: nowrap;
   transition: background-color 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease), transform 80ms var(--ease);
 }
 .btn:active { transform: translateY(1px); }
 .btn-block { width: 100%; }
+.btn .i { width: 16px; height: 16px; }
 .btn-primary { background: var(--ink); color: var(--slip); }
 .btn-primary:hover { background: var(--cobalt); color: var(--on-cobalt); }
-.btn-primary.is-done, .btn-primary.is-done:hover { background: var(--signal); color: var(--signal-ink); }
+.btn-ghost { border-color: var(--line-2); background: none; color: var(--ink); }
+.btn-ghost:hover { border-color: var(--ink); }
+.btn.is-done, .btn.is-done:hover { border-color: transparent; background: var(--signal); color: var(--signal-ink); }
 .btn:disabled { opacity: 0.6; cursor: progress; }
 .btn-on-field { border-color: var(--on-cobalt-line); color: var(--on-cobalt); background: none; }
 .btn-on-field:hover { border-color: var(--on-cobalt); background: oklch(1 0 0 / 0.08); }
+.btn-site { justify-content: space-between; }
+.btn-site small { font: 500 12px/1 var(--font-mono); color: var(--ink-3); }
 
+.copied { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line-2); font-size: 12.5px; color: var(--ink-2); }
+.copied span { white-space: nowrap; }
+.copied b { font: 500 12px/1.4 var(--font-mono); color: var(--ink); text-align: right; word-break: break-all; }
+
+/* Печать «Скопировано» — наклейкой на нижний край чека. */
 .slip-stamp {
-  position: absolute; right: 16px; top: 46px;
-  padding: 5px 11px; border: 2.5px solid var(--cobalt); border-radius: 8px;
-  font: 700 13px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--cobalt);
-  transform: rotate(-7deg); opacity: 0.92; pointer-events: none;
+  position: absolute; right: 10px; bottom: -12px; z-index: 1;
+  padding: 4px 10px; border: 2.5px solid var(--cobalt); border-radius: 8px; background: var(--slip);
+  font: 700 12px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--cobalt);
+  transform: rotate(-6deg); pointer-events: none;
   animation: stamp 260ms var(--ease) both;
 }
 body[data-service="grok"] .slip-stamp { border-color: var(--ink); color: var(--ink); }
-@keyframes stamp { from { transform: rotate(-7deg) scale(1.6); opacity: 0; } to { transform: rotate(-7deg) scale(1); opacity: 0.92; } }
+@keyframes stamp { from { transform: rotate(-6deg) scale(1.6); opacity: 0; } to { transform: rotate(-6deg) scale(1); opacity: 1; } }
 
 /* ── дальше ──────────────────────────────────────────── */
-.next { margin-top: 20px; }
-.next ol { padding: 0; list-style: none; counter-reset: step; display: grid; gap: 8px; margin-bottom: 14px; }
-.next li { counter-increment: step; display: grid; grid-template-columns: 22px 1fr; gap: 10px; color: var(--on-cobalt-2); font-size: 13.5px; line-height: 1.45; }
+.next { margin-top: 16px; }
+.next ol { padding: 0; list-style: none; counter-reset: step; display: grid; gap: 6px; margin-bottom: 12px; }
+.next li { counter-increment: step; display: grid; grid-template-columns: 20px 1fr; gap: 9px; color: var(--on-cobalt-2); font-size: 13px; line-height: 1.4; }
 .next li::before {
-  content: counter(step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
-  background: var(--on-cobalt); color: var(--cobalt); font: 750 12px/1 var(--font-display);
+  content: counter(step); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--on-cobalt); color: var(--cobalt); font: 750 11px/1 var(--font-display);
 }
-kbd { font: 500 11.5px/1 var(--font-mono); padding: 2px 5px; border: 1px solid var(--on-cobalt-line); border-radius: 5px; color: var(--on-cobalt); }
+kbd { font: 500 11px/1 var(--font-mono); padding: 2px 5px; border: 1px solid var(--on-cobalt-line); border-radius: 5px; color: var(--on-cobalt); }
 
-.fine { display: flex; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--on-cobalt-line); color: var(--on-cobalt-2); font-size: 12px; line-height: 1.5; }
-.fine .i { margin-top: 1px; width: 14px; height: 14px; }
+.fine { display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--on-cobalt-line); color: var(--on-cobalt-2); font-size: 11.5px; line-height: 1.45; }
+.fine .i { margin-top: 1px; width: 13px; height: 13px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.note-open { margin-top: 8px; min-height: 36px; font-size: 13.5px; }
