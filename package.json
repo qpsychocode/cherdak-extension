@@ -1,0 +1,13 @@
+{
+  "name": "cherdak-extension",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension: copies the login data of your own ChatGPT, Claude or Grok account for an order at Cherdak. Sends nothing anywhere.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
