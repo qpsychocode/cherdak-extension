@@ -14,6 +14,8 @@ ChatGPT, ключ `sessionKey` и Organization ID у Claude, токен вход
 запрос в коде — страница сессии ChatGPT в его же вкладке, ради ID аккаунта. Проверь сам,
 код небольшой: [`extension/`](extension).
 
+Видео — как достать данные для каждого сервиса: [shop.cherdak.org/extension](https://shop.cherdak.org/extension#video).
+
 ## Установка
 
 - **Chrome Web Store** — обычная установка в один клик, обновляется сама.
