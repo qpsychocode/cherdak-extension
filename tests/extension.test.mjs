@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 import { SERVICES, packAllCookies, packChatGpt, packChatGptAccountId, packClaudeKey, packClaudeOrg, packGrok, serviceForHost } from "../extension/extractors.mjs";
+import { readChatGptSessionInTab, readServiceCookies } from "../extension/readers.mjs";
 
 const read = (path) => readFileSync(new URL(`../extension/${path}`, import.meta.url), "utf8");
 const manifest = JSON.parse(read("manifest.json"));
@@ -31,9 +32,9 @@ test("manifest: минимальные разрешения, без фона и 
 
 test("код: единственный запрос — страница сессии ChatGPT в его же вкладке; без инлайн-скриптов", () => {
   assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts/.test(read("extractors.mjs")));
-  const popup = read("popup.js");
-  assert.ok(!/XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts/.test(popup));
-  assert.deepEqual([...popup.matchAll(/\bfetch\(([^,)]+)/g)].map((m) => m[1]), ['"/api/auth/session"'], "fetch только относительный адрес сессии");
+  const scripts = read("popup.js") + read("readers.mjs");
+  assert.ok(!/XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts/.test(scripts));
+  assert.deepEqual([...scripts.matchAll(/\bfetch\(([^,)]+)/g)].map((m) => m[1]), ['"/api/auth/session"'], "fetch только относительный адрес сессии");
   const html = read("popup.html");
   assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(html));
   assert.ok(!/\son[a-z]+=/i.test(html));
@@ -43,7 +44,7 @@ test("код: единственный запрос — страница сес�
 test("кнопки: у каждого сервиса свои, у каждой — подпись и упаковка", () => {
   const labels = Object.fromEntries(Object.values(SERVICES).map((svc) => [svc.id, svc.actions.map((a) => a.label)]));
   assert.deepEqual(labels, {
-    chatgpt: ["Скопировать сессию", "Скопировать ID аккаунта"],
+    chatgpt: ["Скопировать сессию", "Скопировать ID аккаунта", "Скопировать все куки"],
     claude: ["Скопировать sessionKey", "Скопировать Organization ID", "Скопировать все куки"],
     grok: ["Скопировать токен входа", "Скопировать все куки"]
   });
@@ -53,17 +54,52 @@ test("кнопки: у каждого сервиса свои, у каждой �
   }
 });
 
-test("ChatGPT: сессия — массив куки; ID — account.id со страницы сессии", () => {
-  const res = packChatGpt({ cookies: cookies({ "__Secure-next-auth.session-token.0": "a", "__Secure-next-auth.session-token.1": "b", "oai-did": "d", other: "x" }) });
-  assert.deepEqual(JSON.parse(res.payload), [
-    { name: "__Secure-next-auth.session-token.0", value: "a" },
-    { name: "__Secure-next-auth.session-token.1", value: "b" },
-    { name: "oai-did", value: "d" }
-  ]);
-  assert.equal(packChatGpt({ cookies: cookies({ "oai-did": "d" }) }).ok, false);
-  assert.equal(packChatGptAccountId({ session: { account: { id: ORG.toUpperCase() } } }).payload, ORG);
+test("ChatGPT: копируется исходный JSON целиком; отдельная кнопка берёт account.id", () => {
+  const session = '{ "user": {"id":"user-1"},\r\n "accessToken": "fixture","unrecognized": {"num":1e3} }\n';
+  const res = packChatGpt({ session });
+  assert.equal(res.payload, session);
+  assert.equal(res.preview.value, "JSON целиком");
+  for (const invalid of ["{}", "<html>Access denied</html>", '{"user":{},"accessToken":"old","error":"RefreshAccessTokenError"}']) {
+    assert.equal(packChatGpt({ session: invalid }).ok, false);
+  }
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".toUpperCase();
+  assert.equal(packChatGptAccountId({ session: JSON.stringify({ user: {}, account: { id } }) }).payload, id);
   assert.equal(packChatGptAccountId({ session: null }).reason, "notLoggedIn");
-  assert.equal(packChatGptAccountId({ session: { account: { id: "user-abc" } } }).reason, "noAccountId");
+  assert.equal(packChatGptAccountId({ session: '{"user":{},"account":{"id":"user-abc"}}' }).reason, "noAccountId");
+});
+
+test("чтение сессии запрашивает ответ без преобразования и только из вкладки ChatGPT", async (t) => {
+  const text = '{"user":{},"accessToken":"fixture"}\n';
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/api/auth/session");
+    assert.deepEqual(options, { credentials: "same-origin", cache: "no-store", redirect: "error" });
+    return { ok: true, text: async () => text };
+  });
+  const original = Object.getOwnPropertyDescriptor(globalThis, "location");
+  t.after(() => original ? Object.defineProperty(globalThis, "location", original) : delete globalThis.location);
+  globalThis.location = { origin: "https://chatgpt.com" };
+  assert.equal(await readChatGptSessionInTab(), text);
+  globalThis.location.origin = "https://other.example";
+  assert.equal(await readChatGptSessionInTab(), null);
+  assert.equal(fetch.mock.callCount(), 1);
+});
+
+test("выгрузка куки использует все пути и разделы хранилища только активной вкладки", async () => {
+  const list = [
+    { name: "sso", domain: "grok.com", path: "/", value: "first" },
+    { name: "sso", domain: "grok.com", path: "/", value: "second", partitionKey: { topLevelSite: "https://grok.com", hasCrossSiteAncestor: false } },
+    { name: "sso", domain: "grok.com", path: "/account", value: "" }
+  ];
+  const calls = [];
+  const api = {
+    getAllCookieStores: async () => [{ id: "0", tabIds: [17] }, { id: "1", tabIds: [22] }],
+    getAll: async (options) => { calls.push(options); return list; }
+  };
+  const exported = await readServiceCookies(api, 22, SERVICES.grok.cookieDomains, true);
+  assert.deepEqual(calls, [{ domain: "grok.com", storeId: "1", partitionKey: {} }]);
+  assert.deepEqual(JSON.parse(packAllCookies({ list: exported }).payload), list);
+  await readServiceCookies(api, 22, SERVICES.grok.cookieDomains, false);
+  assert.deepEqual(calls[1], { url: "https://grok.com/", storeId: "1" });
 });
 
 test("Claude: sessionKey, Organization ID и все куки", () => {
@@ -76,16 +112,15 @@ test("Claude: sessionKey, Organization ID и все куки", () => {
     { name: "sessionKey", value: "sk-ant-sid01-xyz", domain: ".claude.ai", path: "/", httpOnly: true, secure: true, sameSite: "lax", session: false, expirationDate: 1, hostOnly: false, storeId: "0" },
     { name: "lastActiveOrg", value: ORG, domain: ".claude.ai", path: "/", httpOnly: false, secure: true, sameSite: "lax", session: false, expirationDate: 1, hostOnly: false, storeId: "0" }
   ];
-  const all = JSON.parse(packAllCookies("sessionKey")({ list }).payload);
-  assert.deepEqual(all.map((c) => c.name), ["lastActiveOrg", "sessionKey"]);
-  assert.deepEqual(Object.keys(all[1]).sort(), ["domain", "expirationDate", "hostOnly", "httpOnly", "name", "path", "sameSite", "secure", "session", "storeId", "value"]);
-  assert.equal(packAllCookies("sessionKey")({ list: list.slice(1) }).ok, false, "без ключа входа — не экспорт");
+  assert.deepEqual(JSON.parse(packAllCookies({ list }).payload), list);
+  assert.deepEqual(JSON.parse(packAllCookies({ list: list.slice(1) }).payload), list.slice(1));
+  assert.equal(packAllCookies({ list: [] }).ok, false);
 });
 
 test("Grok/X/Cursor: токен sso и все куки grok.com", () => {
   assert.equal(packGrok({ cookies: cookies({ sso: "a.b.c" }) }).payload, "a.b.c");
   assert.equal(packGrok({ cookies: cookies({}) }).ok, false);
-  const all = JSON.parse(packAllCookies("sso")({ list: [{ name: "sso", value: "a.b.c", domain: ".grok.com" }, { name: "x", value: "1", domain: "grok.com" }] }).payload);
+  const all = JSON.parse(packAllCookies({ list: [{ name: "sso", value: "a.b.c", domain: ".grok.com" }, { name: "x", value: "1", domain: "grok.com" }] }).payload);
   assert.deepEqual(all.map((c) => c.name), ["sso", "x"]);
 });
 

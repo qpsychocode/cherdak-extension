@@ -1,10 +1,10 @@
 // Поповер. Сервис — по домену активной вкладки (activeTab). Каждая кнопка по нажатию читает
 // своё и кладёт готовый текст в буфер обмена:
 //   куки сайта сервиса — через chrome.cookies (они httpOnly, страница их не видит);
-//   ID аккаунта ChatGPT — страница сессии chatgpt.com/api/auth/session, которую открытая вкладка
-//   ChatGPT читает у себя же (chrome.scripting); из ответа берётся только account.id.
+//   сессия и ID аккаунта ChatGPT — страница chatgpt.com/api/auth/session в открытой вкладке ChatGPT.
 // Больше никаких запросов: на свои или чужие серверы расширение ничего не отправляет.
 import { SERVICES, serviceForHost } from "./extractors.mjs";
+import { readChatGptSessionInTab, readServiceCookies } from "./readers.mjs";
 
 const $ = (id) => document.getElementById(id);
 let service = null;
@@ -32,55 +32,19 @@ function icon(name) {
 const hostOf = (tab) => { try { return tab?.url ? new URL(tab.url).hostname : null; } catch { return null; } };
 
 // ── чтение ────────────────────────────────────────────────
-function getCookies(url) {
-  return new Promise((resolve) => {
-    try {
-      chrome.cookies.getAll({ url }, (list) => resolve(chrome.runtime.lastError || !Array.isArray(list) ? [] : list));
-    } catch {
-      resolve([]);
-    }
-  });
-}
-
-async function cookieList(svc) {
-  const seen = new Set();
-  const out = [];
-  for (const url of svc.cookieUrls) {
-    for (const c of await getCookies(url)) {
-      const key = `${c.name}\u0000${c.domain}\u0000${c.path}`;
-      if (c?.name && !seen.has(key)) { seen.add(key); out.push(c); }
-    }
-  }
-  return out;
-}
-
-// «Имя → куки»; из дублей (разные пути) — самое длинное значение: цельный токен.
+// Chromium уже вернул куки, подходящие URL, в порядке приоритета.
 function cookieMap(list) {
   const map = new Map();
   for (const c of list) {
-    const prev = map.get(c.name);
-    if (!prev || String(c.value ?? "").length > String(prev.value ?? "").length) map.set(c.name, c);
+    if (!map.has(c.name) && c.value) map.set(c.name, c);
   }
   return map;
-}
-
-// Выполняется во вкладке chatgpt.com: та же страница сессии, что открывает сам ChatGPT.
-// Наружу уходит только account.id; null — входа нет.
-async function readAccountInTab() {
-  try {
-    const response = await fetch("/api/auth/session", { credentials: "same-origin" });
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data && data.user ? { account: { id: data.account?.id ?? null } } : null;
-  } catch {
-    return null;
-  }
 }
 
 async function readChatGptSession() {
   if (!activeTab?.id || serviceForHost(hostOf(activeTab))?.id !== "chatgpt") return null;
   try {
-    const [result] = await chrome.scripting.executeScript({ target: { tabId: activeTab.id }, func: readAccountInTab });
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: activeTab.id }, func: readChatGptSessionInTab });
     return result?.result ?? null;
   } catch {
     return null;
@@ -89,8 +53,9 @@ async function readChatGptSession() {
 
 async function readFor(action) {
   if (action.needs === "session") return { session: await readChatGptSession() };
-  const list = await cookieList(service);
-  return { list, cookies: cookieMap(list) };
+  const all = action.needs === "list";
+  const list = await readServiceCookies(chrome.cookies, activeTab?.id, service.cookieDomains, all);
+  return all ? { list } : { cookies: cookieMap(list) };
 }
 
 async function writeClipboard(text) {
